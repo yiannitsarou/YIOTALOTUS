@@ -729,7 +729,7 @@ else:
                     missing_cols = [c for c in required_cols if c not in used_df.columns]
                     st.write("Λείπουν στήλες:", missing_cols if missing_cols else "—")
                 if missing_cols:
-         st.info("Συμπλήρωσε/διόρθωσε τις στήλες που λείπουν στο Excel και ξαναφόρτωσέ το.")
+                    st.info("Συμπλήρωσε/διόρθωσε τις στήλες που λείπουν στο Excel και ξαναφόρτωσέ το.")
                 stats_df = generate_stats(used_df)
                 st.dataframe(stats_df, use_container_width=True)
                 st.download_button(

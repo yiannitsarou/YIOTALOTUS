@@ -455,64 +455,69 @@ if st.button("🚀 ΕΚΤΕΛΕΣΗ ΚΑΤΑΝΟΜΗΣ", type="primary", use_con
             with st.spinner("Τρέχουν τα Βήματα 1→6..."):
                 m.build_step1_6_per_scenario(str(input_path), str(step6_path), pick_step4=pick_step4_all)
 
-            
-with st.spinner("Τρέχει το Βήμα 7..."):
+            with st.spinner("Τρέχει το Βήμα 7..."):
                 xls = pd.ExcelFile(step6_path)
-                scenario_sheets = [s for s in xls.sheet_names if str(s).startswith("ΣΕΝΑΡΙΟ_")]
-                if not scenario_sheets:
-                    st.error("Δεν βρέθηκαν φύλλα 'ΣΕΝΑΡΙΟ_*'.")
+                sheet_names = [s for s in xls.sheet_names if s != "Σύνοψη"]
+                if not sheet_names:
+                    st.error("Δεν βρέθηκαν sheets σεναρίων (εκτός από 'Σύνοψη').")
                 else:
-                    # Συλλογή scores από ΟΛΑ τα φύλλα και ΟΛΕΣ τις στήλες ΒΗΜΑ6_ΣΕΝΑΡΙΟ_*
-                    all_scores = []
-                    for sheet in scenario_sheets:
-                        df_sheet = xls.parse(sheet)
+                    # Συγκεντρώνουμε ΟΛΑ τα σενάρια από ΟΛΑ τα φύλλα
+                    candidates = []
+                    import random as _rnd
+                    for sheet in sheet_names:
+                        df_sheet = pd.read_excel(step6_path, sheet_name=sheet)
                         scen_cols = [c for c in df_sheet.columns if re.match(r"^ΒΗΜΑ6_ΣΕΝΑΡΙΟ_\d+$", str(c))]
                         for col in scen_cols:
                             s = s7.score_one_scenario(df_sheet, col)
                             s["sheet"] = sheet
-                            all_scores.append(s)
-                    if not all_scores:
-                        st.error("Δεν βρέθηκαν στήλες τύπου 'ΒΗΜΑ6_ΣΕΝΑΡΙΟ_N'.")
+                            candidates.append(s)
+
+                    if not candidates:
+                        st.error("Δεν βρέθηκαν σενάρια Βήματος 6 σε κανένα φύλλο.")
                     else:
-                        # 1) ΖΕΡΟ-BROKEN προτεραιότητα σε επίπεδο ΟΛΟΥ του αρχείου
-                        pool = [s for s in all_scores if int(s.get("broken_friendships", 0)) == 0] or all_scores
-                        # 2) Ταξινόμηση με τους ίδιους tie-breakers
+                        # 1) Φίλτρο: προτεραιότητα στα zero-broken, αν υπάρχουν
+                        zero_broken = [s for s in candidates if int(s.get("broken_friendships", 0)) == 0]
+                        pool = zero_broken if zero_broken else candidates
+
+                        # 2) Ταξινόμηση με τους tie-breakers
                         pool_sorted = sorted(
                             pool,
                             key=lambda s: (
-                                s["total_score"],
-                                s["diff_population"],
-                                s["diff_gender_total"],
-                                s["diff_greek"],
-                                str(s["scenario_col"])
+                                int(s["total_score"]),
+                                int(s["diff_population"]),
+                                int(s["diff_gender_total"]),
+                                int(s["diff_greek"]),
+                                str(s["scenario_col"]),
                             )
                         )
+
                         head = pool_sorted[0]
                         ties = [s for s in pool_sorted if (
-                            s["total_score"] == head["total_score"] and
-                            s["diff_population"] == head["diff_population"] and
-                            s["diff_gender_total"] == head["diff_gender_total"] and
-                            s["diff_greek"] == head["diff_greek"]
+                            int(s["total_score"]) == int(head["total_score"]) and
+                            int(s["diff_population"]) == int(head["diff_population"]) and
+                            int(s["diff_gender_total"]) == int(head["diff_gender_total"]) and
+                            int(s["diff_greek"]) == int(head["diff_greek"])
                         )]
-                        import random
-                        random.seed(42)
-                        best = random.choice(ties) if len(ties) > 1 else head
+
+                        _rnd.seed(42)
+                        best = _rnd.choice(ties) if len(ties) > 1 else head
 
                         winning_sheet = best["sheet"]
                         winning_col = best["scenario_col"]
                         final_out = ROOT / final_name_all
-                        full_df = xls.parse(winning_sheet).copy()
-                        with pd.ExcelWriter(final_out, engine="xlsxwriter") as w:
-                            full_df.to_excel(w, index=False, sheet_name="FINAL_SCENARIO")
-                            labels = sorted(
-                                [str(v) for v in full_df[winning_col].dropna().unique() if re.match(r"^Α\d+$", str(v))],
-                                key=lambda x: int(re.search(r"\d+", x).group(0))
-                            )
-                            for lab in labels:
-                                sub = full_df.loc[full_df[winning_col] == lab, ["ΟΝΟΜΑ", winning_col]].copy()
-                                sub = sub.rename(columns={winning_col: "ΤΜΗΜΑ"})
-                                sub.to_excel(w, index=False, sheet_name=str(lab))
-st.session_state["last_final_path"] = str(final_out.resolve())
+                            full_df = pd.read_excel(step6_path, sheet_name=sheet_names[0]).copy()
+                            with pd.ExcelWriter(final_out, engine="xlsxwriter") as w:
+                                full_df.to_excel(w, index=False, sheet_name="FINAL_SCENARIO")
+                                labels = sorted(
+                                    [str(v) for v in full_df[winning_col].dropna().unique() if re.match(r"^Α\d+$", str(v))],
+                                    key=lambda x: int(re.search(r"\d+", x).group(0))
+                                )
+                                for lab in labels:
+                                    sub = full_df.loc[full_df[winning_col] == lab, ["ΟΝΟΜΑ", winning_col]].copy()
+                                    sub = sub.rename(columns={winning_col: "ΤΜΗΜΑ"})
+                                    sub.to_excel(w, index=False, sheet_name=str(lab))
+
+                            st.session_state["last_final_path"] = str(final_out.resolve())
 
                             st.success(f"✅ Ολοκληρώθηκε. Νικητής: στήλη {winning_col}")
                             st.download_button(
@@ -861,17 +866,35 @@ if st.button("📤 ΕΞΑΓΩΓΗ: Προσθήκη φύλλου 'Step7_Συγκ
                         scen_cols = [c for c in df_sheet.columns if re.match(r"^ΒΗΜΑ6_ΣΕΝΑΡΙΟ_\d+$", str(c))]
                         if not scen_cols:
                             continue
-                        # Πάρε τον ΚΑΛΥΤΕΡΟ ανά φύλλο (με προτεραιότητα zero-broken)
-                        pick = s7.pick_best_scenario(df_sheet, scen_cols, random_seed=42)
-                        best = pick.get("best", {})
+
+                        # Υπολογισμός scores για ΟΛΕΣ τις στήλες του φύλλου
+                        rows = [s7.score_one_scenario(df_sheet, col) | {"_col": col} for col in scen_cols]
+
+                        # Φίλτρο zero-broken αν υπάρχουν
+                        zero_broken = [r for r in rows if int(r.get("broken_friendships", 0)) == 0]
+                        pool = zero_broken if zero_broken else rows
+
+                        # Ταξινόμηση όπως στο Βήμα 7
+                        pool_sorted = sorted(
+                            pool,
+                            key=lambda r: (
+                                int(r["total_score"]),
+                                int(r["diff_population"]),
+                                int(r["diff_gender_total"]),
+                                int(r["diff_greek"]),
+                                str(r["scenario_col"]),
+                            )
+                        )
+                        best_row = pool_sorted[0]
+
                         summary_rows.append({
                             "Φύλλο": sheet,
-                            "Στήλη": best.get("scenario_col", scen_cols[0]),
-                            "Συνολικό Score": best.get("total_score", 0),
-                            "Σπασμένες δυάδες": best.get("broken_friendships", 0),
-                            "Διαφορά Πληθυσμού": best.get("diff_population", 0),
-                            "Σύνολο Διαφοράς Φύλου": best.get("diff_gender_total", 0),
-                            "Διαφορά Ελληνικών": best.get("diff_greek", 0),
+                            "Στήλη": best_row.get("scenario_col", best_row.get("_col")),
+                            "Συνολικό Score": int(best_row.get("total_score", 0)),
+                            "Σπασμένες δυάδες": int(best_row.get("broken_friendships", 0)),
+                            "Διαφορά Πληθυσμού": int(best_row.get("diff_population", 0)),
+                            "Σύνολο Διαφοράς Φύλου": int(best_row.get("diff_gender_total", 0)),
+                            "Διαφορά Ελληνικών": int(best_row.get("diff_greek", 0)),
                         })
                     if not summary_rows:
                         st.warning("Δεν βρέθηκαν σενάρια για σύγκριση.")
@@ -898,6 +921,5 @@ if st.button("📤 ΕΞΑΓΩΓΗ: Προσθήκη φύλλου 'Step7_Συγκ
                         )
                 except Exception as e:
                     st.exception(e)
-except Exception as e:
-                    st.exception(e)
+                        st.exception(e)
     

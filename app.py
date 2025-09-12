@@ -485,40 +485,6 @@ if st.button("🚀 ΕΚΤΕΛΕΣΗ ΚΑΤΑΝΟΜΗΣ", type="primary", use_con
                                     sub = sub.rename(columns={winning_col: "ΤΜΗΜΑ"})
                                     sub.to_excel(w, index=False, sheet_name=str(lab))
 
-
-                            # --- ΝΕΟ: Προσθήκη φύλλου "Step7_Συγκριτικός" αυτόματα μετά το Βήμα 7 ---
-                            try:
-                                xls_cmp = pd.ExcelFile(step6_path)
-                                scenario_sheets_cmp = [s for s in xls_cmp.sheet_names if str(s).startswith("ΣΕΝΑΡΙΟ_")]
-                                summary_rows = []
-                                s7 = _load_module("step7_fixed_final", ROOT / "step7_fixed_final.py")
-                                for sh in scenario_sheets_cmp:
-                                    df_sh = xls_cmp.parse(sh)
-                                    scen_cols_sh = [c for c in df_sh.columns if re.match(r"^ΒΗΜΑ6_ΣΕΝΑΡΙΟ_\d+$", str(c))]
-                                    if not scen_cols_sh:
-                                        continue
-                                    col_sh = scen_cols_sh[0]
-                                    res = s7.score_one_scenario(df_sh, col_sh)
-                                    summary_rows.append({
-                                        "Φύλλο": sh,
-                                        "Στήλη": col_sh,
-                                        "Συνολικό Score": res.get("total_score", 0),
-                                        "Σπασμένες δυάδες": res.get("broken_friendships", 0),
-                                        "Διαφορά Πληθυσμού": res.get("diff_population", 0),
-                                        "Σύνολο Διαφοράς Φύλου": res.get("diff_gender_total", 0),
-                                        "Διαφορά Ελληνικών": res.get("diff_greek", 0),
-                                    })
-                                if summary_rows:
-                                    compare_df = pd.DataFrame(summary_rows, columns=[
-                                        "Φύλλο","Στήλη","Συνολικό Score","Σπασμένες δυάδες",
-                                        "Διαφορά Πληθυσμού","Σύνολο Διαφοράς Φύλου","Διαφορά Ελληνικών"
-                                    ])
-                                    # Προσθήκη στο ήδη ανοιχτό ExcelWriter:
-                                    with pd.ExcelWriter(final_out, engine="openpyxl", mode="a", if_sheet_exists="replace") as w2:
-                                        compare_df.to_excel(w2, index=False, sheet_name="Step7_Συγκριτικός")
-                            except Exception:
-                                pass
-
                             st.session_state["last_final_path"] = str(final_out.resolve())
 
                             st.success(f"✅ Ολοκληρώθηκε. Νικητής: στήλη {winning_col}")
@@ -858,7 +824,7 @@ else:
 
             # ➕ Εξαγωγή "Step7_Συγκριτικός" σε επιπλέον φύλλο (μία γραμμή ανά ΣΕΝΑΡΙΟ_*)
             st.markdown("—")
-            if st.button("📤 ΕΞΑΓΩΓΗ: Προσθήκη φύλλου ‘Step7_Συγκριτικός’", use_container_width=True, key="btn_export_comp"):
+            if st.button(label="📤 ΕΞΑΓΩΓΗ: Προσθήκη φύλλου 'Step7_Συγκριτικός'", key="btn_export_comp", use_container_width=True):
                 try:
                     s7 = _load_module("step7_fixed_final", ROOT / "step7_fixed_final.py")
                     summary_rows = []
@@ -885,29 +851,17 @@ else:
                             "Φύλλο","Στήλη","Συνολικό Score","Σπασμένες δυάδες",
                             "Διαφορά Πληθυσμού","Σύνολο Διαφοράς Φύλου","Διαφορά Ελληνικών"
                         ])
-                        # Δημιουργία νέου αρχείου: όλα τα αρχικά φύλλα + το νέο ‘Step7_Συγκριτικός’
                         base_name = Path(auto_s6_path).stem if auto_s6_path else "STEP1_6_PER_SCENARIO"
                         out_name = _timestamped(base_name + "_WITH_STEP7_ΣΥΓΚΡΙΤΙΚΟΣ", ".xlsx")
                         out_path = ROOT / out_name
                         with pd.ExcelWriter(out_path, engine="xlsxwriter") as w:
-                            # Αντιγραφή όλων των αρχικών sheets
                             for sheet in xls.sheet_names:
                                 df_sheet = xls.parse(sheet)
                                 df_sheet.to_excel(w, index=False, sheet_name=sheet[:31] if len(sheet) > 31 else sheet)
-                            # Προσθήκη συγκριτικού πίνακα
                             compare_df.to_excel(w, index=False, sheet_name="Step7_Συγκριτικός")
-                            # Προαιρετικά: auto-width
-                            try:
-                                wb = w.book
-                                for ws in w.sheets.values():
-                                    for idx, colname in enumerate(compare_df.columns if ws.name=="Step7_Συγκριτικός" else df_sheet.columns):
-                                        width = min(60, max(12, len(str(colname))+2))
-                                        ws.set_column(idx, idx, width)
-                            except Exception:
-                                pass
-                        st.success("✅ Δημιουργήθηκε ο ‘Step7_Συγκριτικός’.")
+                        st.success("✅ Δημιουργήθηκε ο 'Step7_Συγκριτικός'.")
                         st.download_button(
-                            "⬇️ Κατέβασε αρχείο με ‘Step7_Συγκριτικός’",
+                            label="⬇️ Κατέβασε αρχείο με 'Step7_Συγκριτικός'",
                             data=out_path.read_bytes(),
                             file_name=out_path.name,
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

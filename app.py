@@ -824,7 +824,7 @@ else:
 
             # ➕ Εξαγωγή "Step7_Συγκριτικός" σε επιπλέον φύλλο (μία γραμμή ανά ΣΕΝΑΡΙΟ_*)
             st.markdown("—")
-            if st.button(label="📤 ΕΞΑΓΩΓΗ: Προσθήκη φύλλου 'Step7_Συγκριτικός'", key="btn_export_comp", use_container_width=True):
+            if st.button("📤 ΕΞΑΓΩΓΗ: Προσθήκη φύλλου 'Step7_Συγκριτικός'", key="btn_export_comp", use_container_width=True):
                 try:
                     s7 = _load_module("step7_fixed_final", ROOT / "step7_fixed_final.py")
                     summary_rows = []

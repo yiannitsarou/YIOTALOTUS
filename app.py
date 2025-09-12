@@ -455,37 +455,64 @@ if st.button("🚀 ΕΚΤΕΛΕΣΗ ΚΑΤΑΝΟΜΗΣ", type="primary", use_con
             with st.spinner("Τρέχουν τα Βήματα 1→6..."):
                 m.build_step1_6_per_scenario(str(input_path), str(step6_path), pick_step4=pick_step4_all)
 
-            with st.spinner("Τρέχει το Βήμα 7..."):
+            
+with st.spinner("Τρέχει το Βήμα 7..."):
                 xls = pd.ExcelFile(step6_path)
-                sheet_names = [s for s in xls.sheet_names if s != "Σύνοψη"]
-                if not sheet_names:
-                    st.error("Δεν βρέθηκαν sheets σεναρίων (εκτός από 'Σύνοψη').")
+                scenario_sheets = [s for s in xls.sheet_names if str(s).startswith("ΣΕΝΑΡΙΟ_")]
+                if not scenario_sheets:
+                    st.error("Δεν βρέθηκαν φύλλα 'ΣΕΝΑΡΙΟ_*'.")
                 else:
-                    df0 = pd.read_excel(step6_path, sheet_name=sheet_names[0])
-                    scen_cols = [c for c in df0.columns if re.match(r"^ΒΗΜΑ6_ΣΕΝΑΡΙΟ_\d+$", str(c))]
-                    if not scen_cols:
+                    # Συλλογή scores από ΟΛΑ τα φύλλα και ΟΛΕΣ τις στήλες ΒΗΜΑ6_ΣΕΝΑΡΙΟ_*
+                    all_scores = []
+                    for sheet in scenario_sheets:
+                        df_sheet = xls.parse(sheet)
+                        scen_cols = [c for c in df_sheet.columns if re.match(r"^ΒΗΜΑ6_ΣΕΝΑΡΙΟ_\d+$", str(c))]
+                        for col in scen_cols:
+                            s = s7.score_one_scenario(df_sheet, col)
+                            s["sheet"] = sheet
+                            all_scores.append(s)
+                    if not all_scores:
                         st.error("Δεν βρέθηκαν στήλες τύπου 'ΒΗΜΑ6_ΣΕΝΑΡΙΟ_N'.")
                     else:
-                        pick = s7.pick_best_scenario(df0.copy(), scen_cols, random_seed=42)
-                        best = pick.get("best")
-                        if not best or "scenario_col" not in best:
-                            st.error("Αποτυχία επιλογής σεναρίου.")
-                        else:
-                            winning_col = best["scenario_col"]
-                            final_out = ROOT / final_name_all
-                            full_df = pd.read_excel(step6_path, sheet_name=sheet_names[0]).copy()
-                            with pd.ExcelWriter(final_out, engine="xlsxwriter") as w:
-                                full_df.to_excel(w, index=False, sheet_name="FINAL_SCENARIO")
-                                labels = sorted(
-                                    [str(v) for v in full_df[winning_col].dropna().unique() if re.match(r"^Α\d+$", str(v))],
-                                    key=lambda x: int(re.search(r"\d+", x).group(0))
-                                )
-                                for lab in labels:
-                                    sub = full_df.loc[full_df[winning_col] == lab, ["ΟΝΟΜΑ", winning_col]].copy()
-                                    sub = sub.rename(columns={winning_col: "ΤΜΗΜΑ"})
-                                    sub.to_excel(w, index=False, sheet_name=str(lab))
+                        # 1) ΖΕΡΟ-BROKEN προτεραιότητα σε επίπεδο ΟΛΟΥ του αρχείου
+                        pool = [s for s in all_scores if int(s.get("broken_friendships", 0)) == 0] or all_scores
+                        # 2) Ταξινόμηση με τους ίδιους tie-breakers
+                        pool_sorted = sorted(
+                            pool,
+                            key=lambda s: (
+                                s["total_score"],
+                                s["diff_population"],
+                                s["diff_gender_total"],
+                                s["diff_greek"],
+                                str(s["scenario_col"])
+                            )
+                        )
+                        head = pool_sorted[0]
+                        ties = [s for s in pool_sorted if (
+                            s["total_score"] == head["total_score"] and
+                            s["diff_population"] == head["diff_population"] and
+                            s["diff_gender_total"] == head["diff_gender_total"] and
+                            s["diff_greek"] == head["diff_greek"]
+                        )]
+                        import random
+                        random.seed(42)
+                        best = random.choice(ties) if len(ties) > 1 else head
 
-                            st.session_state["last_final_path"] = str(final_out.resolve())
+                        winning_sheet = best["sheet"]
+                        winning_col = best["scenario_col"]
+                        final_out = ROOT / final_name_all
+                        full_df = xls.parse(winning_sheet).copy()
+                        with pd.ExcelWriter(final_out, engine="xlsxwriter") as w:
+                            full_df.to_excel(w, index=False, sheet_name="FINAL_SCENARIO")
+                            labels = sorted(
+                                [str(v) for v in full_df[winning_col].dropna().unique() if re.match(r"^Α\d+$", str(v))],
+                                key=lambda x: int(re.search(r"\d+", x).group(0))
+                            )
+                            for lab in labels:
+                                sub = full_df.loc[full_df[winning_col] == lab, ["ΟΝΟΜΑ", winning_col]].copy()
+                                sub = sub.rename(columns={winning_col: "ΤΜΗΜΑ"})
+                                sub.to_excel(w, index=False, sheet_name=str(lab))
+st.session_state["last_final_path"] = str(final_out.resolve())
 
                             st.success(f"✅ Ολοκληρώθηκε. Νικητής: στήλη {winning_col}")
                             st.download_button(
@@ -824,7 +851,8 @@ else:
                 file_name=(Path(auto_s6_path).name if auto_s6_path else "STEP1_6_PER_SCENARIO.xlsx"), mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             # ➕ Εξαγωγή "Step7_Συγκριτικός" σε επιπλέον φύλλο (μία γραμμή ανά ΣΕΝΑΡΙΟ_*)
             st.markdown("—")
-            if st.button("📤 ΕΞΑΓΩΓΗ: Προσθήκη φύλλου 'Step7_Συγκριτικός'", key="btn_export_comp", use_container_width=True):
+            
+if st.button("📤 ΕΞΑΓΩΓΗ: Προσθήκη φύλλου 'Step7_Συγκριτικός'", key="btn_export_comp", use_container_width=True):
                 try:
                     s7 = _load_module("step7_fixed_final", ROOT / "step7_fixed_final.py")
                     summary_rows = []
@@ -833,16 +861,17 @@ else:
                         scen_cols = [c for c in df_sheet.columns if re.match(r"^ΒΗΜΑ6_ΣΕΝΑΡΙΟ_\d+$", str(c))]
                         if not scen_cols:
                             continue
-                        col = scen_cols[0]
-                        res = s7.score_one_scenario(df_sheet, col)
+                        # Πάρε τον ΚΑΛΥΤΕΡΟ ανά φύλλο (με προτεραιότητα zero-broken)
+                        pick = s7.pick_best_scenario(df_sheet, scen_cols, random_seed=42)
+                        best = pick.get("best", {})
                         summary_rows.append({
                             "Φύλλο": sheet,
-                            "Στήλη": col,
-                            "Συνολικό Score": res.get("total_score", 0),
-                            "Σπασμένες δυάδες": res.get("broken_friendships", 0),
-                            "Διαφορά Πληθυσμού": res.get("diff_population", 0),
-                            "Σύνολο Διαφοράς Φύλου": res.get("diff_gender_total", 0),
-                            "Διαφορά Ελληνικών": res.get("diff_greek", 0),
+                            "Στήλη": best.get("scenario_col", scen_cols[0]),
+                            "Συνολικό Score": best.get("total_score", 0),
+                            "Σπασμένες δυάδες": best.get("broken_friendships", 0),
+                            "Διαφορά Πληθυσμού": best.get("diff_population", 0),
+                            "Σύνολο Διαφοράς Φύλου": best.get("diff_gender_total", 0),
+                            "Διαφορά Ελληνικών": best.get("diff_greek", 0),
                         })
                     if not summary_rows:
                         st.warning("Δεν βρέθηκαν σενάρια για σύγκριση.")
@@ -868,5 +897,7 @@ else:
                             use_container_width=True
                         )
                 except Exception as e:
+                    st.exception(e)
+except Exception as e:
                     st.exception(e)
     

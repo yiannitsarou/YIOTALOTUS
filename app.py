@@ -830,8 +830,6 @@ else:
             st.warning("Το φύλλο είναι κενό.")
         else:
             st.dataframe(df_prev.head(200), use_container_width=True)
-.read_bytes() if auto_s6_path else None,
-                file_name=(Path(auto_s6_path).name if auto_s6_path else "STEP1_6_PER_SCENARIO.xlsx"), mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             # ➕ Εξαγωγή "Step7_Συγκριτικός" σε επιπλέον φύλλο (μία γραμμή ανά ΣΕΝΑΡΙΟ_*)
             st.markdown("—")
             

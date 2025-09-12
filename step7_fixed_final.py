@@ -1,21 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-step_7_final_score_CORRECTED.py
+step7_fixed_final.py — FINAL (Rule: MIN total_score; tie → prefer zero-broken)
+-----------------------------------------------------------------------------
+ΚΑΝΟΝΑΣ ΕΠΙΛΟΓΗΣ (όπως ζητήθηκε):
+1) ΠΡΩΤΑ επιλέγουμε το σενάριο με το μικρότερο total_score.
+2) Αν υπάρξει ισοβαθμία στο total_score, προτιμάται σενάριο με ΜΗ σπασμένες φιλίες
+   (δηλ. broken_friendships = 0). Γενικά, όσο μικρότερο broken_friendships τόσο καλύτερα.
+3) Αν εξακολουθεί να υπάρχει ισοβαθμία, tie-breakers: diff_population → diff_gender_total → diff_greek.
+4) Αν υπάρχει απόλυτη ισοβαθμία σε όλα τα παραπάνω, γίνεται τυχαία επιλογή (seeded).
 
-Διορθωμένο Βήμα 7 — Υπολογισμός τελικού score με ΣΩΣΤΗ λογική ζευγαριών
-------------------------------------------------------------------------
-ΔΙΟΡΘΩΣΕΙΣ:
-1) Πληθυσμός: άθροισμα διαφορών όλων των ζευγαριών τμημάτων (όχι max-min)
-2) Φύλο: άθροισμα διαφορών ζευγαριών για αγόρια + άθροισμα για κορίτσια
-3) Γνώση: άθροισμα διαφορών ζευγαριών με καλή γνώση ελληνικών
-4) Tie-breaking: χρήση συνολικών διαφορών (όχι max difference)
-
-Παράδειγμα για 3 τμήματα A1(25), A2(23), A3(23):
-- Διαφορά A1-A2: |25-23| = 2
-- Διαφορά A1-A3: |25-23| = 2  
-- Διαφορά A2-A3: |23-23| = 0
-- Συνολική διαφορά = 2+2+0 = 4
-- Ποινή = (4-1)*3 = 9 (αν >1)
+ΣΗΜΕΙΩΣΗ: Αυτή η έκδοση καταργεί την παλιότερη «σκληρή προτεραιότητα» σε zero-broken
+(δηλ. να κοιτούσαμε ΜΟΝΟ σενάρια με zero-broken). Τώρα το zero-broken λειτουργεί ΜΟΝΟ ως
+tie-breaker *μετά* το total_score, όπως ορίστηκε.
 """
 from __future__ import annotations
 import random
@@ -66,7 +62,7 @@ def _infer_num_classes_from_values(vals: Iterable[str]) -> int:
         return 2
     return len(labels)
 
-# ------------------------ ΔΙΟΡΘΩΜΕΝΟΙ Core helpers ------------------------
+# ------------------------ Core helpers ------------------------
 
 def _counts_per_class(df: pd.DataFrame, scenario_col: str, label_filter=None) -> Dict[str, int]:
     """Γενικός μετρητής ανά τμήμα."""
@@ -99,11 +95,7 @@ def _good_greek_filter(row) -> bool:
     return False
 
 def _pairwise_differences_sum(counts: Dict[str, int]) -> int:
-    """
-    Υπολογίζει το άθροισμα διαφορών όλων των ζευγαριών (για tie-breaking).
-    Για τμήματα Α1(25), Α2(23), Α3(23):
-    |25-23| + |25-23| + |23-23| = 2+2+0 = 4
-    """
+    """Άθροισμα διαφορών όλων των ζευγαριών (για tie-breaking)."""
     values = list(counts.values())
     total_diff = 0
     n = len(values)
@@ -113,14 +105,7 @@ def _pairwise_differences_sum(counts: Dict[str, int]) -> int:
     return total_diff
 
 def _pairwise_penalty(counts: Dict[str, int], free: int, weight: int) -> int:
-    """
-    ΔΙΟΡΘΩΣΗ: Υπολογίζει ποινή εφαρμόζοντας κατώφλι ΑΝΑ ΖΕΥΓΟΣ.
-    Παράδειγμα κοριτσιών Α1(10), Α2(7), Α3(6), free=1, weight=2:
-    - Ζεύγος Α1-Α2: |10-7|=3 → (3-1)*2 = 4
-    - Ζεύγος Α1-Α3: |10-6|=4 → (4-1)*2 = 6  
-    - Ζεύγος Α2-Α3: |7-6|=1  → (1-1)*2 = 0
-    - Συνολική ποινή = 4+6+0 = 10
-    """
+    """Ποινή εφαρμοσμένη ανά ζεύγος τάξεων με κατώφλι free και βάρος weight."""
     values = list(counts.values())
     penalty = 0
     n = len(values)
@@ -132,14 +117,14 @@ def _pairwise_penalty(counts: Dict[str, int], free: int, weight: int) -> int:
     return penalty
 
 def _pair_conflict_penalty(aZ, aI, bZ, bI) -> int:
-    """Ποινή παιδαγωγικής σύγκρουσης ανά ζεύγος (unchanged)."""
+    """Ποινή παιδαγωγικής σύγκρουσης ανά ζεύγος."""
     if aI and bI: return 5
     if (aI and bZ) or (bI and aZ): return 4
     if aZ and bZ: return 3
     return 0
 
 def _class_conflict_sum(class_df: pd.DataFrame) -> int:
-    """Συνολική ποινή συγκρούσεων ενός τμήματος (unchanged)."""
+    """Συνολική ποινή συγκρούσεων ενός τμήματος."""
     s = 0
     rows = class_df[['ΖΩΗΡΟΣ','ΙΔΙΑΙΤΕΡΟΤΗΤΑ']].fillna("").to_dict('records')
     for i in range(len(rows)):
@@ -151,7 +136,7 @@ def _class_conflict_sum(class_df: pd.DataFrame) -> int:
     return s
 
 def _all_conflicts_sum(df: pd.DataFrame, scenario_col: str) -> int:
-    """Συνολική ποινή παιδαγωγικών συγκρούσεων (unchanged)."""
+    """Συνολική ποινή παιδαγωγικών συγκρούσεων."""
     s = 0
     for lab, class_df in df.groupby(scenario_col):
         if not re.match(r"^Α\d+$", str(lab)):
@@ -160,7 +145,7 @@ def _all_conflicts_sum(df: pd.DataFrame, scenario_col: str) -> int:
     return s
 
 def _mutual_pairs(df: pd.DataFrame) -> List[Tuple[str,str]]:
-    """Βρίσκει όλες τις *πλήρως αμοιβαίες* δυάδες από «ΦΙΛΟΙ» (unchanged)."""
+    """Βρίσκει όλες τις *πλήρως αμοιβαίες* δυάδες από «ΦΙΛΟΙ»."""
     if "ΦΙΛΟΙ" not in df.columns:
         return []
     name2friends = {}
@@ -178,7 +163,7 @@ def _mutual_pairs(df: pd.DataFrame) -> List[Tuple[str,str]]:
 
 def _broken_friendships_count(df: pd.DataFrame, scenario_col: str, critical_pairs: Optional[List[Tuple[str,str]]] = None,
                               count_unassigned_as_broken: bool=False) -> int:
-    """Μετρά πόσες αμοιβαίες δυάδες ΔΕΝ κατέληξαν στο ίδιο τμήμα (unchanged)."""
+    """Μετρά πόσες αμοιβαίες δυάδες ΔΕΝ κατέληξαν στο ίδιο τμήμα."""
     if critical_pairs is None:
         pairs = _mutual_pairs(df)
     else:
@@ -196,43 +181,39 @@ def _broken_friendships_count(df: pd.DataFrame, scenario_col: str, critical_pair
             broken += 1
     return broken
 
-# ------------------------ ΔΙΟΡΘΩΜΕΝΗ Public API ------------------------
+# ------------------------ Public API ------------------------
 
 def score_one_scenario(df: pd.DataFrame, scenario_col: str, num_classes: Optional[int] = None,
                        critical_pairs: Optional[List[Tuple[str,str]]]=None,
                        count_unassigned_as_broken: bool=False) -> Dict[str, Any]:
-    """
-    ΔΙΟΡΘΩΜΕΝΟΣ: Υπολογίζει το αναλυτικό score για ένα σενάριο με σωστή λογική ζευγαριών.
-    """
+    """Υπολογίζει αναλυτικό score για ένα σενάριο με σωστή λογική ζευγαριών."""
     df = df.copy()
     if num_classes is None:
         num_classes = _infer_num_classes_from_values(df[scenario_col].values)
 
-    # 1. ΔΙΟΡΘΩΣΗ: Πληθυσμός - ποινή ανά ζεύγος (100% συνεπής με οδηγό)
+    # 1) Πληθυσμός
     pop_counts = _counts_per_class(df, scenario_col)
     total_pop_diff = _pairwise_differences_sum(pop_counts)  # για tie-breaking
     population_penalty = _pairwise_penalty(pop_counts, free=1, weight=3)
 
-    # 2. ΔΙΟΡΘΩΣΗ: Φύλο - ποινή ανά ζεύγος, ξεχωριστά για αγόρια+κορίτσια
+    # 2) Φύλο (αγόρια + κορίτσια)
     boys_counts = _counts_per_class(df, scenario_col, label_filter=_boys_filter)
     girls_counts= _counts_per_class(df, scenario_col, label_filter=_girls_filter)
-    
     total_boys_diff = _pairwise_differences_sum(boys_counts)    # για tie-breaking
-    total_girls_diff = _pairwise_differences_sum(girls_counts) # για tie-breaking
-    
+    total_girls_diff = _pairwise_differences_sum(girls_counts)  # για tie-breaking
     boys_penalty = _pairwise_penalty(boys_counts, free=1, weight=2)
     girls_penalty = _pairwise_penalty(girls_counts, free=1, weight=2)
     gender_penalty = boys_penalty + girls_penalty
 
-    # 3. ΔΙΟΡΘΩΣΗ: Γνώση ελληνικών - ποινή ανά ζεύγος  
+    # 3) Γνώση ελληνικών
     good_counts = _counts_per_class(df, scenario_col, label_filter=_good_greek_filter)
     total_greek_diff = _pairwise_differences_sum(good_counts)  # για tie-breaking
     greek_penalty = _pairwise_penalty(good_counts, free=2, weight=1)
 
-    # 4. Παιδαγωγικές συγκρούσεις (unchanged)
+    # 4) Παιδαγωγικές συγκρούσεις
     conflict_penalty = _all_conflicts_sum(df, scenario_col)
 
-    # 5. Σπασμένες φιλίες (unchanged)
+    # 5) Σπασμένες φιλίες
     broken = _broken_friendships_count(df, scenario_col, critical_pairs, count_unassigned_as_broken)
     broken_friendships_penalty = 5 * broken
 
@@ -245,12 +226,13 @@ def score_one_scenario(df: pd.DataFrame, scenario_col: str, num_classes: Optiona
         "boys_counts": boys_counts,
         "girls_counts": girls_counts,
         "good_greek_counts": good_counts,
-        # ΔΙΟΡΘΩΣΗ: Χρήση συνολικών διαφορών για tie-breaking
+        # Διαφορές για tie-breaking
         "diff_population": int(total_pop_diff),
         "diff_boys": int(total_boys_diff),
         "diff_girls": int(total_girls_diff), 
-        "diff_gender_total": int(total_boys_diff + total_girls_diff),  # για tie-breaking
+        "diff_gender_total": int(total_boys_diff + total_girls_diff),
         "diff_greek": int(total_greek_diff),
+        # Ποινές
         "population_penalty": int(population_penalty),
         "boys_penalty": int(boys_penalty),
         "girls_penalty": int(girls_penalty),
@@ -267,10 +249,10 @@ def pick_best_scenario(df: pd.DataFrame, scenario_cols: List[str], num_classes: 
                        count_unassigned_as_broken: bool=False,
                        k_best: int=1, random_seed: int=42) -> Dict[str, Any]:
     """
-    Καθαρή υλοποίηση: επιλέγει το σενάριο με το ΜΙΝΙΜΟ total_score.
-    Κανόνες:
-      • Προτεραιότητα σε σενάρια με broken_friendships == 0 (αν υπάρχουν).
-      • Tie-breakers: diff_population → diff_gender_total → diff_greek.
+    Τελικός κανόνας επιλογής:
+      • 1ο κριτήριο: MIN total_score (παγκόσμια).
+      • 2ο κριτήριο (tie): λιγότερα broken_friendships (δηλ. προτιμά zero-broken).
+      • 3ο κριτήριο (tie): diff_population → diff_gender_total → diff_greek.
       • Τυχαιότητα ΜΟΝΟ σε απόλυτη ισοβαθμία (seeded).
     """
     if not scenario_cols:
@@ -287,30 +269,29 @@ def pick_best_scenario(df: pd.DataFrame, scenario_cols: List[str], num_classes: 
     if not scores:
         return {"best": None, "scores": []}
 
-    # ΖΕΡΟ-BROKEN προτεραιότητα (χωρίς σκληρή απόρριψη εδώ, μόνο προτίμηση)
-    zero = [s for s in scores if int(s.get("broken_friendships", 0)) == 0]
-    pool = zero if zero else scores
-
+    # ΤΑΞΙΝΟΜΗΣΗ σύμφωνα με τον νέο κανόνα
     pool_sorted = sorted(
-        pool,
+        scores,
         key=lambda s: (
             s["total_score"],
+            int(s["broken_friendships"]),   # λιγότερα σπασμένα → καλύτερα
             s["diff_population"],
             s["diff_gender_total"],
             s["diff_greek"],
-            str(s["scenario_col"])
+            str(s["scenario_col"]),
         )
     )
 
     head = pool_sorted[0]
+    # απόλυτη ισοβαθμία σε όλα τα παραπάνω κριτήρια (εκτός του ονόματος)
     ties = [s for s in pool_sorted if (
         s["total_score"] == head["total_score"] and
+        int(s["broken_friendships"]) == int(head["broken_friendships"]) and
         s["diff_population"] == head["diff_population"] and
         s["diff_gender_total"] == head["diff_gender_total"] and
         s["diff_greek"] == head["diff_greek"]
     )]
 
-    import random
     random.seed(random_seed)
     best = random.choice(ties) if len(ties) > 1 else head
 
@@ -396,7 +377,7 @@ def export_best_scenario_split_by_class(scores_xlsx_path: str, out_xlsx_path: st
     import pandas as pd, re
     xls = pd.ExcelFile(scores_xlsx_path)
     if "BEST_SCENARIO_DATA" not in xls.sheet_names:
-        raise ValueError("Το αρχείο δεν περιέχει sheet 'BEST_SCENARIO_DATA'. Τρέξε πρώτα το Βήμα 7 για να το δημιουργήσεις.")
+        raise ValueError("Το αρχείο δεν περιέχει sheet 'BEST_SCENΑΡΙΟ_DATA'. Τρέξε πρώτα το Βήμα 7 για να το δημιουργήσεις.")
 
     best_df = xls.parse("BEST_SCENARIO_DATA")
 
@@ -432,12 +413,16 @@ def export_best_scenario_split_by_class(scores_xlsx_path: str, out_xlsx_path: st
     return out_xlsx_path
 
 
-# ------------------------ Επιλογή across sheets (MIN penalty, zero-broken) ------------------------
+# ------------------------ Επιλογή across sheets (MIN total_score; tie → zero-broken) ------------------------
 def pick_across_sheets_minrule(step1_6_xlsx_path: str, seed: int = 42) -> Dict[str, Any]:
     """
     Ανοίγει το STEP1_6_PER_SCENARIO_*.xlsx, υπολογίζει score για το πρώτο ΒΗΜΑ6_ΣΕΝΑΡΙΟ_* κάθε φύλλου
-    και επιστρέφει το global best με τον ίδιο κανόνα: MIN total_score με zero-broken υποχρεωτικό.
-    Tie-breakers: diff_population → diff_gender_total → diff_greek → (random μόνο αν απόλυτη ισοβαθμία).
+    και επιστρέφει το global best με τον ΝΕΟ κανόνα:
+      • 1ο κριτήριο: MIN total_score (παγκόσμια).
+      • 2ο κριτήριο (tie): λιγότερα broken_friendships (δηλ. προτιμά zero-broken).
+      • 3ο κριτήριο (tie): diff_population → diff_gender_total → diff_greek.
+      • Τυχαιότητα μόνο σε απόλυτη ισοβαθμία.
+    ΔΕΝ απορρίπτει φύλλα όταν δεν υπάρχει zero-broken — απλώς τα συγκρίνει δίκαια.
     """
     import pandas as _pd, re as _re, random as _rnd
     xls = _pd.ExcelFile(step1_6_xlsx_path)
@@ -456,20 +441,19 @@ def pick_across_sheets_minrule(step1_6_xlsx_path: str, seed: int = 42) -> Dict[s
     if not candidates:
         raise RuntimeError("No Step 6 scenario columns found across sheets.")
 
-    zero = [t for t in candidates if int(t[2]["broken_friendships"]) == 0]
-    if not zero:
-        raise RuntimeError("ΑΔΥΝΑΜΙΑ: Όλα τα φύλλα/σενάρια έχουν σπασμένες αμοιβαίες δυάδες (Βήματα 3–7).")
-
-    zero.sort(key=lambda t: (
+    candidates.sort(key=lambda t: (
         t[2]["total_score"],
+        int(t[2]["broken_friendships"]),
         t[2]["diff_population"],
         t[2]["diff_gender_total"],
-        t[2]["diff_greek"]
+        t[2]["diff_greek"],
+        str(t[0]),  # sheet name as last tiebreaker
     ))
 
-    head = zero[0]
-    ties = [t for t in zero if (
+    head = candidates[0]
+    ties = [t for t in candidates if (
         t[2]["total_score"] == head[2]["total_score"] and
+        int(t[2]["broken_friendships"]) == int(head[2]["broken_friendships"]) and
         t[2]["diff_population"] == head[2]["diff_population"] and
         t[2]["diff_gender_total"] == head[2]["diff_gender_total"] and
         t[2]["diff_greek"] == head[2]["diff_greek"]

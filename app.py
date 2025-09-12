@@ -7,7 +7,6 @@ from io import BytesIO
 # Project root directory
 ROOT = Path(__file__).parent.resolve()
 
-
 import streamlit as st
 import pandas as pd
 
@@ -35,8 +34,6 @@ def _get_logo_bytes():
         except Exception:
             return None
     return None
-
-
 
 def _inject_floating_logo(width_px=62):
     """Render a floating logo at bottom-right that stays on screen while scrolling."""
@@ -83,7 +80,6 @@ def _inject_floating_logo(width_px=62):
 
 from PIL import Image, ImageDraw, ImageFont
 
-
 # ---- Logo helpers ----
 def _find_logo_path():
     from pathlib import Path as _P
@@ -107,7 +103,6 @@ def _find_logo_path():
         for p in base.glob("lotus*.png"):
             return str(p)
     return None
-
 
 # ---- Compose logo with bottom caption overlay ----
 
@@ -178,7 +173,6 @@ if _logo_path:
     except Exception:
         _logo_img = None
 
-
 # Load logo image for page icon (from bytes or path)
 _logo_bytes = _get_logo_bytes()
 _logo_img = None
@@ -206,8 +200,6 @@ st.markdown(f"""
 </div>
 """ , unsafe_allow_html=True)
 
-
-
 # Show floating logo only on the initial screen (before auth + terms)
 try:
     _auth = bool(st.session_state.get("auth_ok", False))
@@ -216,12 +208,6 @@ except Exception:
     _auth, _terms = (False, False)
 if not (_auth and _terms):
     _inject_floating_logo(width_px=62)
-
-
-
-
-
-
 
 def _load_module(name: str, file_path: Path):
     spec = importlib.util.spec_from_file_location(name, str(file_path))
@@ -248,7 +234,6 @@ def _find_latest_step6():
         return candidates[0] if candidates else None
     except Exception:
         return None
-
 
 def _check_required_files(paths):
     missing = [str(p) for p in paths if not p.exists()]
@@ -305,7 +290,6 @@ def _terms_md():
 Για άδεια χρήσης/συνεργασίες: *panayiotayiannitsarou@gmail.com*.
 """
 
-
 def _story_md():
     return """
 **Η εφαρμογή αυτή γεννήθηκε από μια εσωτερική ανάγκη:** να θυμίσει ότι **κανένα παιδί δεν πρέπει να μένει στο περιθώριο**. Το παιδί δεν είναι απλώς ένα όνομα σε λίστα. Είναι παρουσία, ψυχή, μέλος μιας ομάδας. Μια απερίσκεπτη κατανομή ή ένας λανθασμένος παιδαγωγικός χειρισμός μπορεί να ταράξει την εύθραυστη ψυχική ισορροπία ενός παιδιού — και μαζί της, την ηρεμία μιας οικογένειας.
@@ -336,8 +320,6 @@ def _story_md():
 
 — *John Donne*
 """
-
-
 
 # ---------------------------
 # Αρχεία που δεν αλλάζουμε (modules 1→7)
@@ -419,7 +401,6 @@ st.divider()
 # 🚀 Εκτέλεση Κατανομής
 # ---------------------------
 st.header("🚀 Εκτέλεση Κατανομής")
-
 
 up_all = st.file_uploader("Ανέβασε αρχικό Excel (για 1→7)", type=["xlsx"], key="uploader_all")
 colA, colB, colC = st.columns([1,1,1])
@@ -814,7 +795,6 @@ st.divider()
 # 🔎 Αναλυτικά Σενάρια 
 # ---------------------------
 
-
 st.header("🔎 Αναλυτικά Σενάρια")
 
 # 1) Βρες αυτόματα το πιο πρόσφατο αρχείο Βήματος 6 (όλα τα σενάρια)
@@ -850,8 +830,7 @@ else:
             st.warning("Το φύλλο είναι κενό.")
         else:
             st.dataframe(df_prev.head(200), use_container_width=True)
-            # παροχή download κουμπιού
-            st.download_button("⬇️ Κατέβασε Excel (1→6)", data=Path(auto_s6_path).read_bytes() if auto_s6_path else None,
+.read_bytes() if auto_s6_path else None,
                 file_name=(Path(auto_s6_path).name if auto_s6_path else "STEP1_6_PER_SCENARIO.xlsx"), mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             # ➕ Εξαγωγή "Step7_Συγκριτικός" σε επιπλέον φύλλο (μία γραμμή ανά ΣΕΝΑΡΙΟ_*)
             st.markdown("—")

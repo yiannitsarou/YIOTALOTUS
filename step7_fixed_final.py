@@ -267,45 +267,54 @@ def pick_best_scenario(df: pd.DataFrame, scenario_cols: List[str], num_classes: 
                        count_unassigned_as_broken: bool=False,
                        k_best: int=1, random_seed: int=42) -> Dict[str, Any]:
     """
-    ΔΙΟΡΘΩΜΕΝΟΣ: Βαθμολογεί και επιλέγει βέλτιστο σενάριο με διορθωμένη ιεραρχία.
+    Καθαρή υλοποίηση: επιλέγει το σενάριο με το ΜΙΝΙΜΟ total_score.
+    Κανόνες:
+      • Προτεραιότητα σε σενάρια με broken_friendships == 0 (αν υπάρχουν).
+      • Tie-breakers: diff_population → diff_gender_total → diff_greek.
+      • Τυχαιότητα ΜΟΝΟ σε απόλυτη ισοβαθμία (seeded).
     """
-    if num_classes is None and scenario_cols:
+    if not scenario_cols:
+        return {"best": None, "scores": []}
+    if num_classes is None:
         num_classes = _infer_num_classes_from_values(df[scenario_cols[0]].values)
 
-    scores = [score_one_scenario(df, c, num_classes, critical_pairs, count_unassigned_as_broken)
-              for c in scenario_cols if c in df.columns]
-
+    scores = []
+    for c in scenario_cols:
+        if c not in df.columns:
+            continue
+        s = score_one_scenario(df, c, num_classes, critical_pairs, count_unassigned_as_broken)
+        scores.append(s)
     if not scores:
         return {"best": None, "scores": []}
 
-    # ΔΙΟΡΘΩΣΗ: Tie-breaking με συνολικές διαφορές
-    scores_sorted = sorted(
-        scores,
+    # ΖΕΡΟ-BROKEN προτεραιότητα (χωρίς σκληρή απόρριψη εδώ, μόνο προτίμηση)
+    zero = [s for s in scores if int(s.get("broken_friendships", 0)) == 0]
+    pool = zero if zero else scores
+
+    pool_sorted = sorted(
+        pool,
         key=lambda s: (
-            s["total_score"], 
-            s["diff_population"],       # συνολική πληθυσμιακή διαφορά
-            s["diff_gender_total"],     # συνολική διαφορά φύλου (αγόρια+κορίτσια)
-            s["diff_greek"]             # συνολική διαφορά γνώσης
+            s["total_score"],
+            s["diff_population"],
+            s["diff_gender_total"],
+            s["diff_greek"],
+            str(s["scenario_col"])
         )
     )
 
-    # Ομάδα κορυφής για τυχαία επιλογή
-    top = [scores_sorted[0]]
-    for s in scores_sorted[1:]:
-        if (s["total_score"] == top[0]["total_score"] and
-            s["diff_population"] == top[0]["diff_population"] and
-            s["diff_gender_total"] == top[0]["diff_gender_total"] and
-            s["diff_greek"] == top[0]["diff_greek"]):
-            top.append(s)
-        else:
-            break
+    head = pool_sorted[0]
+    ties = [s for s in pool_sorted if (
+        s["total_score"] == head["total_score"] and
+        s["diff_population"] == head["diff_population"] and
+        s["diff_gender_total"] == head["diff_gender_total"] and
+        s["diff_greek"] == head["diff_greek"]
+    )]
 
+    import random
     random.seed(random_seed)
-    best = random.choice(top)
+    best = random.choice(ties) if len(ties) > 1 else head
 
-    return {"best": best, "scores": scores_sorted[:max(k_best,1)]}
-
-# ------------------------ Helper functions (unchanged but updated) ------------------------
+    return {"best": best, "scores": pool_sorted[:max(1, int(k_best))]}
 
 def score_to_dataframe(df: pd.DataFrame, scenario_cols: List[str], **kwargs) -> pd.DataFrame:
     """Μετατρέπει scores σε DataFrame για εύκολη προβολή."""
@@ -421,3 +430,60 @@ def export_best_scenario_split_by_class(scores_xlsx_path: str, out_xlsx_path: st
             safe_name = re.sub(r"[:\\/?*\[\]]", "_", str(cls))[:31] or "ΚΕΝΟ"
             sub.to_excel(writer, index=False, sheet_name=safe_name)
     return out_xlsx_path
+
+
+# ------------------------ Επιλογή across sheets (MIN penalty, zero-broken) ------------------------
+def pick_across_sheets_minrule(step1_6_xlsx_path: str, seed: int = 42) -> Dict[str, Any]:
+    """
+    Ανοίγει το STEP1_6_PER_SCENARIO_*.xlsx, υπολογίζει score για το πρώτο ΒΗΜΑ6_ΣΕΝΑΡΙΟ_* κάθε φύλλου
+    και επιστρέφει το global best με τον ίδιο κανόνα: MIN total_score με zero-broken υποχρεωτικό.
+    Tie-breakers: diff_population → diff_gender_total → diff_greek → (random μόνο αν απόλυτη ισοβαθμία).
+    """
+    import pandas as _pd, re as _re, random as _rnd
+    xls = _pd.ExcelFile(step1_6_xlsx_path)
+    candidates = []
+    for sheet in xls.sheet_names:
+        if str(sheet).strip() in {"Σύνοψη"}:
+            continue
+        df = _pd.read_excel(step1_6_xlsx_path, sheet_name=sheet)
+        scen_cols = [c for c in df.columns if _re.match(r"^ΒΗΜΑ6_ΣΕΝΑΡΙΟ_\d+$", str(c))]
+        if not scen_cols:
+            continue
+        col = scen_cols[0]
+        res = score_one_scenario(df, col)
+        candidates.append((sheet, col, res, df))
+
+    if not candidates:
+        raise RuntimeError("No Step 6 scenario columns found across sheets.")
+
+    zero = [t for t in candidates if int(t[2]["broken_friendships"]) == 0]
+    if not zero:
+        raise RuntimeError("ΑΔΥΝΑΜΙΑ: Όλα τα φύλλα/σενάρια έχουν σπασμένες αμοιβαίες δυάδες (Βήματα 3–7).")
+
+    zero.sort(key=lambda t: (
+        t[2]["total_score"],
+        t[2]["diff_population"],
+        t[2]["diff_gender_total"],
+        t[2]["diff_greek"]
+    ))
+
+    head = zero[0]
+    ties = [t for t in zero if (
+        t[2]["total_score"] == head[2]["total_score"] and
+        t[2]["diff_population"] == head[2]["diff_population"] and
+        t[2]["diff_gender_total"] == head[2]["diff_gender_total"] and
+        t[2]["diff_greek"] == head[2]["diff_greek"]
+    )]
+
+    _rnd.seed(seed)
+    chosen_sheet, chosen_col, chosen_score, chosen_df = _rnd.choice(ties) if len(ties) > 1 else head
+
+    return {
+        "chosen_sheet": chosen_sheet,
+        "chosen_col": chosen_col,
+        "broken_pairs": int(chosen_score["broken_friendships"]),
+        "total_score": int(chosen_score["total_score"]),
+        "diff_population": int(chosen_score["diff_population"]),
+        "diff_gender_total": int(chosen_score["diff_gender_total"]),
+        "diff_greek": int(chosen_score["diff_greek"]),
+    }

@@ -475,15 +475,12 @@ if st.button("🚀 ΕΚΤΕΛΕΣΗ ΚΑΤΑΝΟΜΗΣ", type="primary", use_con
                     if not candidates:
                         st.error("Δεν βρέθηκαν σενάρια Βήματος 6 σε κανένα φύλλο.")
                     else:
-                        # 1) Φίλτρο: προτεραιότητα στα zero-broken, αν υπάρχουν
-                        zero_broken = [s for s in candidates if int(s.get("broken_friendships", 0)) == 0]
-                        pool = zero_broken if zero_broken else candidates
-
-                        # 2) Ταξινόμηση με τους tie-breakers
+                        # 1) Κανόνας: ΠΡΩΤΑ min total_score, tie→ λιγότερα broken, μετά diff_population→diff_gender_total→diff_greek
                         pool_sorted = sorted(
-                            pool,
+                            candidates,
                             key=lambda s: (
                                 int(s["total_score"]),
+                                int(s.get("broken_friendships", 0)),
                                 int(s["diff_population"]),
                                 int(s["diff_gender_total"]),
                                 int(s["diff_greek"]),
@@ -494,6 +491,7 @@ if st.button("🚀 ΕΚΤΕΛΕΣΗ ΚΑΤΑΝΟΜΗΣ", type="primary", use_con
                         head = pool_sorted[0]
                         ties = [s for s in pool_sorted if (
                             int(s["total_score"]) == int(head["total_score"]) and
+                            int(s.get("broken_friendships", 0)) == int(head.get("broken_friendships", 0)) and
                             int(s["diff_population"]) == int(head["diff_population"]) and
                             int(s["diff_gender_total"]) == int(head["diff_gender_total"]) and
                             int(s["diff_greek"]) == int(head["diff_greek"])
@@ -505,29 +503,30 @@ if st.button("🚀 ΕΚΤΕΛΕΣΗ ΚΑΤΑΝΟΜΗΣ", type="primary", use_con
                         winning_sheet = best["sheet"]
                         winning_col = best["scenario_col"]
                         final_out = ROOT / final_name_all
-                            full_df = pd.read_excel(step6_path, sheet_name=sheet_names[0]).copy()
-                            with pd.ExcelWriter(final_out, engine="xlsxwriter") as w:
-                                full_df.to_excel(w, index=False, sheet_name="FINAL_SCENARIO")
-                                labels = sorted(
-                                    [str(v) for v in full_df[winning_col].dropna().unique() if re.match(r"^Α\d+$", str(v))],
-                                    key=lambda x: int(re.search(r"\d+", x).group(0))
-                                )
-                                for lab in labels:
-                                    sub = full_df.loc[full_df[winning_col] == lab, ["ΟΝΟΜΑ", winning_col]].copy()
-                                    sub = sub.rename(columns={winning_col: "ΤΜΗΜΑ"})
-                                    sub.to_excel(w, index=False, sheet_name=str(lab))
 
-                            st.session_state["last_final_path"] = str(final_out.resolve())
-
-                            st.success(f"✅ Ολοκληρώθηκε. Νικητής: στήλη {winning_col}")
-                            st.download_button(
-                                "⬇️ Κατέβασε Τελικό Αποτέλεσμα (1→7)",
-                                data=_read_file_bytes(final_out),
-                                file_name=final_out.name,
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                use_container_width=True
+                        full_df = pd.read_excel(step6_path, sheet_name=winning_sheet).copy()
+                        with pd.ExcelWriter(final_out, engine="xlsxwriter") as w:
+                            full_df.to_excel(w, index=False, sheet_name="FINAL_SCENARIO")
+                            labels = sorted(
+                                [str(v) for v in full_df[winning_col].dropna().unique() if re.match(r"^Α\d+$", str(v))],
+                                key=lambda x: int(re.search(r"\d+", x).group(0))
                             )
-                            st.caption("ℹ️ Το αρχείο αποθηκεύτηκε και θα χρησιμοποιηθεί **αυτόματα** από τα «📊 Στατιστικά».")
+                            for lab in labels:
+                                sub = full_df.loc[full_df[winning_col] == lab, ["ΟΝΟΜΑ", winning_col]].copy()
+                                sub = sub.rename(columns={winning_col: "ΤΜΗΜΑ"})
+                                sub.to_excel(w, index=False, sheet_name=str(lab))
+
+                        st.session_state["last_final_path"] = str(final_out.resolve())
+
+                        st.success(f"✅ Ολοκληρώθηκε. Νικητής: φύλλο {winning_sheet} — στήλη {winning_col}")
+                        st.download_button(
+                            "⬇️ Κατέβασε Τελικό Αποτέλεσμα (1→7)",
+                            data=_read_file_bytes(final_out),
+                            file_name=final_out.name,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
+                        st.caption("ℹ️ Το αρχείο αποθηκεύτηκε και θα χρησιμοποιηθεί **αυτόματα** από τα «📊 Στατιστικά».")
         except Exception as e:
             st.exception(e)
 
@@ -870,15 +869,12 @@ if st.button("📤 ΕΞΑΓΩΓΗ: Προσθήκη φύλλου 'Step7_Συγκ
                         # Υπολογισμός scores για ΟΛΕΣ τις στήλες του φύλλου
                         rows = [s7.score_one_scenario(df_sheet, col) | {"_col": col} for col in scen_cols]
 
-                        # Φίλτρο zero-broken αν υπάρχουν
-                        zero_broken = [r for r in rows if int(r.get("broken_friendships", 0)) == 0]
-                        pool = zero_broken if zero_broken else rows
-
-                        # Ταξινόμηση όπως στο Βήμα 7
+                        # Ταξινόμηση όπως στο Βήμα 7 (κανόνας MIN total_score, tie→ λιγότερα broken, μετά diffs)
                         pool_sorted = sorted(
-                            pool,
+                            rows,
                             key=lambda r: (
                                 int(r["total_score"]),
+                                int(r.get("broken_friendships", 0)),
                                 int(r["diff_population"]),
                                 int(r["diff_gender_total"]),
                                 int(r["diff_greek"]),
@@ -921,5 +917,4 @@ if st.button("📤 ΕΞΑΓΩΓΗ: Προσθήκη φύλλου 'Step7_Συγκ
                         )
                 except Exception as e:
                     st.exception(e)
-                        st.exception(e)
     

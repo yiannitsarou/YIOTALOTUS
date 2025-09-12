@@ -870,5 +870,3 @@ else:
                 except Exception as e:
                     st.exception(e)
     
-                               file_name=Path(auto_s6_path).name if auto_s6_path else "STEP1_6_PER_SCENARIO.xlsx",
-                               disabled=(auto_s6_path is None))

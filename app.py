@@ -65,7 +65,7 @@ def _inject_floating_logo(width_px=62):
 #floating-logo img {{
   width: {width_px}px;
   height: auto;
-  filter: hue-rotate(300deg) saturate(85%) brightness(112%) drop-shadow(0 1px 2px rgba(0,0,0,0.20));
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.20));
   opacity: 0.92;
 }}
 @media (max-width: 768px) {{
@@ -85,12 +85,15 @@ def _find_logo_path():
     from pathlib import Path as _P
     here = _P(__file__).parent
     candidates = [
-        "99752222-b038-4f67-9e50-2cb51b23e3e8.png",
-        "lotus_appicon_white_1024 (1).png",
-        "lotus_appicon_white_1024.png",
+        "logo_sidebar_preview_selected.png",
+        "logo_lotus_lilac_sidebar100.png",
+        "logo_lotus_lilac_original.png",
+        "logo_lotus_lilac_header180.png",
+        "logo_violet_white.png",
         "logo.png",
         "assets/logo.png",
-    ]
+        "lotus_appicon_white_1024.png",
+        ]
     search_bases = [here, here / "assets", _P("/mnt/data")]
     # direct candidates
     for base in search_bases:
@@ -196,7 +199,7 @@ except Exception:
 st.markdown(f"""
 <div style="display:flex; align-items:center; gap:8px; opacity:0.85;">
   <span>«Για μια παιδεία που βλέπει το φώς σε όλα τα παιδιά»</span>
-  <img src="data:image/png;base64,{_logo_inline_b64}" alt="lotus" style="width:18px; height:auto; margin-top:-2px; filter:hue-rotate(300deg) saturate(85%) brightness(112%);" />
+  <img src="data:image/png;base64,{_logo_inline_b64}" alt="lotus" style="width:18px; height:auto; margin-top:-2px; " />
 </div>
 """ , unsafe_allow_html=True)
 

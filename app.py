@@ -81,7 +81,7 @@ def _inject_floating_logo(width_px=62):
 </div>
 """, unsafe_allow_html=True)
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 
 # ---- Logo helpers ----
@@ -125,11 +125,9 @@ def _make_logo_with_overlay(img_path, width=140, text="“No man is an island”
 
     # Choose a calligraphic/bold-italic style if available; fallback to bold sans
     font_candidates = [
-        "99752222-b038-4f67-9e50-2cb51b23e3e8.png",
-        "lotus_appicon_white_1024 (1).png",
-        "lotus_appicon_white_1024.png",
-        "logo.png",
-        "assets/logo.png",
+        ("DejaVuSans.ttf", 20),
+        ("Arial.ttf", 20),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20),
     ]
     font = None
     for fname, fsize in font_candidates:
